@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import il.co.ilrd.chatserver.Message;
+import chatserver.Message;
 
 public class erez implements Runnable{
 

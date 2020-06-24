@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 public interface  Message<K, V> {
 	public K getKey();

@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -6,11 +6,11 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
-public class TcpClientChatServer1 {
+public class TcpClientChatServer2 {
 	public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
 
 		int portNumber = 55555;
-		ServerMessage message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.REGISTRATION_REQUEST, "eyal1"));
+		ServerMessage message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.REGISTRATION_REQUEST, "eyal2"));
 
 		ByteBuffer buffer = ByteBuffer.allocate(2048); 
 		SocketChannel client = SocketChannel.open(new InetSocketAddress(InetAddress.getLocalHost(), portNumber));
@@ -30,7 +30,7 @@ public class TcpClientChatServer1 {
 		Thread.sleep(500);
 		buffer.clear();
 
-		message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.MESSAGE, "hi to me"));
+		message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.MESSAGE, "hi to every one"));
 		
 		array1 = ByteUtil.toByteArray(message);
 		

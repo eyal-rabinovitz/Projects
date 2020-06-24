@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 public enum ProtocolPort {
 	PINGPONG_PROTOCOL_PORT(50000),

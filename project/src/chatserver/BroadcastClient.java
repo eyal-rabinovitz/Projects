@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;

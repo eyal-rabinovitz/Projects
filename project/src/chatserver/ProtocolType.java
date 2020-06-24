@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 public enum ProtocolType {
 	PINGPONG,

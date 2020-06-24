@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 import java.io.IOException;
 import java.net.InetAddress;

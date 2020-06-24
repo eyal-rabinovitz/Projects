@@ -1,7 +1,8 @@
 package il.co.ilrd.databasemanagement;
 
 import java.io.Serializable;
-import il.co.ilrd.chatserver.Message;
+
+import chatserver.Message;
 
 public class DatabaseManagementMessage implements Message<ActionTypeKey, Object[]> , Serializable{
 	private static final long serialVersionUID = 1L;

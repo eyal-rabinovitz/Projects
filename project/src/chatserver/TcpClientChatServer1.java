@@ -1,4 +1,4 @@
-package il.co.ilrd.chatserver;
+package chatserver;
 
 import java.io.IOException;
 import java.net.InetAddress;
@@ -6,11 +6,11 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
-public class TcpClientChatServer3 {
+public class TcpClientChatServer1 {
 	public static void main(String[] args) throws IOException, InterruptedException, ClassNotFoundException {
 
 		int portNumber = 55555;
-		ServerMessage message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.REGISTRATION_REQUEST, "eyal3"));
+		ServerMessage message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.REGISTRATION_REQUEST, "eyal1"));
 
 		ByteBuffer buffer = ByteBuffer.allocate(2048); 
 		SocketChannel client = SocketChannel.open(new InetSocketAddress(InetAddress.getLocalHost(), portNumber));
@@ -30,7 +30,7 @@ public class TcpClientChatServer3 {
 		Thread.sleep(500);
 		buffer.clear();
 
-		message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.MESSAGE, "hi to every one!"));
+		message = new ServerMessage(ProtocolType.CHAT_SERVER, new ChatServerMessage(ChatProtocolKeys.MESSAGE, "hi to me"));
 		
 		array1 = ByteUtil.toByteArray(message);
 		
@@ -67,6 +67,28 @@ public class TcpClientChatServer3 {
 		receivedmessage =	(ServerMessage)ByteUtil.toObject(buffer.array());
 		System.out.println(receivedmessage.getData().toString());
 		
+		buffer.clear();
+		System.out.println("4");
+
+		client.read(buffer);
+		receivedmessage =	(ServerMessage)ByteUtil.toObject(buffer.array());
+		System.out.println(receivedmessage.getData().toString());
+		
+		
+		buffer.clear();
+		System.out.println("5");
+
+		client.read(buffer);
+		receivedmessage =	(ServerMessage)ByteUtil.toObject(buffer.array());
+		System.out.println(receivedmessage.getData().toString());
+		
+		
+		buffer.clear();
+		System.out.println("6");
+
+		client.read(buffer);
+		receivedmessage =	(ServerMessage)ByteUtil.toObject(buffer.array());
+		System.out.println(receivedmessage.getData().toString());
 		/*while(isRun) {
 
 			@SuppressWarnings("unchecked")
