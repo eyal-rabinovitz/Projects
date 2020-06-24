@@ -1,7 +1,6 @@
-package chatserver;
+package databasemanagementserver;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.net.UnknownHostException;
@@ -12,15 +11,15 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
-import hashmap.HashMap;
-
-public class Server {
+public class IOTServer {
 	private ConnectionHandler connectionHandler = new ConnectionHandler();
 	private MessageHandler messageHandler = new MessageHandler();
 	private boolean isServerRunning = false;
@@ -93,7 +92,7 @@ public class Server {
 
 		@Override
 		public void registerChannel(Selector selector) throws UnknownHostException, IOException {
-			TcpServerChannel.bind(new InetSocketAddress(InetAddress.getLocalHost(), portNumber));
+			TcpServerChannel.bind(new InetSocketAddress(portNumber));
 			TcpServerChannel.configureBlocking(false);
 			TcpServerChannel.register(selector, SelectionKey.OP_ACCEPT);
 		}
@@ -193,7 +192,7 @@ public class Server {
 	private class ConnectionHandler implements Runnable {
 		private Selector selector;
 		private static final int BUF_SIZE = 2048;
-		private static final int TIMEOUT = 1000;
+		private static final int TIMEOUT = 5000;
 		private List<Connection> connectionList = new ArrayList<>();
 		private List<Integer> tcpPortsInUse = new ArrayList<>();
 		private List<Integer> udpPortsInUse = new ArrayList<>();
@@ -449,7 +448,255 @@ public class Server {
 
 	}
 	
+	/**********************************************
+	 * DBFunction interface
+	 **********************************************/
+	public interface DBFunction<T, U, Z> {
+		public void apply(T t, U u, Z z) throws SQLException;
+	}
 
+	/**********************************************
+	 * Database Management Protocol
+	 **********************************************/
+	private class DatabaseManagementProtocol implements Protocol {
+		private Map<String, DatabaseManagementServer> companiesMap = new HashMap<>();
+		private Map<DatabaseKeys, DBFunction<ClientInfo, String, List<Object>>> databaseMethodsMap = new HashMap<>();
+		private static final int BUFFER_SIZE = 2048;
+		private static final String URL = "jdbc:mysql://localhost";
+		private static final String USER_NAME = "root";
+		private static final String USER_PASSWORD = "132435"; 
+		private DatabaseManagementMessage databaseMessage;
+		
+		public DatabaseManagementProtocol() {
+			databaseMethodsMap.put(DatabaseKeys.CREATE_COMPANY_DATABASE, new CreateCompanyDatabase());
+			databaseMethodsMap.put(DatabaseKeys.CREATE_TABLE, new CreateTable());
+			databaseMethodsMap.put(DatabaseKeys.DELETE_TABLE, new DeleteTable());
+			databaseMethodsMap.put(DatabaseKeys.CREATE_IOT_EVENT, new CreateIOTEvent());
+			databaseMethodsMap.put(DatabaseKeys.CREATE_ROW, new CreateRow());
+			databaseMethodsMap.put(DatabaseKeys.READ_ROW, new ReadRow());
+			databaseMethodsMap.put(DatabaseKeys.READ_FIELD_BY_NAME, new ReadFieldByName());
+			databaseMethodsMap.put(DatabaseKeys.READ_FIELD_BY_INDEX, new ReadFieldByIndex());
+			databaseMethodsMap.put(DatabaseKeys.UPDATE_FIELD_BY_NAME, new UpdateFieldByName());
+			databaseMethodsMap.put(DatabaseKeys.UPDATE_FIELD_BY_INDEX, new UpdateFieldByIndex());
+			databaseMethodsMap.put(DatabaseKeys.DELETE_ROW, new DeleteRow());
+			databaseMethodsMap.put(DatabaseKeys.ERROR_MESSAGE, new WrongKeyHandler());
+			databaseMethodsMap.put(DatabaseKeys.ACK_MESSAGE, new WrongKeyHandler());
+		}
+		
+		@Override
+		public void handleMessage(ClientInfo clientInfo, Message<?, ?> message) {
+			databaseMessage = (DatabaseManagementMessage)message;
+			String databaseName = databaseMessage.getKey().getDatabaseName();
+			List<Object> parameters = databaseMessage.getData();
+
+			try {
+				if(!isConnectionValid(clientInfo, databaseName, parameters)) {	
+					databaseMethodsMap.get(DatabaseKeys.ERROR_MESSAGE).apply(clientInfo, databaseName, parameters);
+				}else {
+					openMessage(clientInfo, databaseName, parameters);					
+				}
+			} catch (SQLException | ArrayIndexOutOfBoundsException | ClassCastException e) {
+				sendMessage(databaseName, DatabaseKeys.ERROR_MESSAGE, e.getMessage(), clientInfo);
+			}
+		}
+
+		private boolean isConnectionValid(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+			return((clientInfo.connection.getPortNumber() == ProtocolPort.DATABASE_MANAGEMENT_PORT.getPort()) &&
+				(clientInfo.getTcpSocketChannel() instanceof SocketChannel));
+		}
+		
+		private void openMessage(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+			DatabaseKeys databaseKeys= databaseMessage.getKey().getActionType();
+			DatabaseManagementServer currentDatabase = companiesMap.get(databaseName);
+		
+			if(null == currentDatabase) {
+				databaseMethodsMap.get(DatabaseKeys.CREATE_COMPANY_DATABASE).apply(clientInfo, databaseName, parameters);
+			}
+			databaseMethodsMap.get(databaseKeys).apply(clientInfo, databaseName, parameters);
+		}
+		
+		private class CreateCompanyDatabase implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK_CREATED = "Database created";
+			private static final String ACK_ALREADY_EXISTS = "Database already exists";
+
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				if(!companiesMap.containsKey(databaseName)) {
+					addDatabase(databaseName, parameters);
+					sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK_CREATED, clientInfo);
+				} else {
+					sendMessage(databaseName, DatabaseKeys.ERROR_MESSAGE, ACK_ALREADY_EXISTS, clientInfo);
+				}
+			}
+		}
+
+		private class CreateTable implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Table created";
+
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).createTable((String)parameters.get(0));
+				
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class DeleteTable implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Table deleted";
+
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).deleteTable((String)parameters.get(0));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class CreateIOTEvent implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "IOTEvent created";
+		
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).createIOTEvent((String)parameters.get(0));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class CreateRow implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Row created";
+
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).createRow((String)parameters.get(0));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo); 
+			}
+		}
+		
+		private class ReadRow implements DBFunction<ClientInfo, String, List<Object>> {			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				List<Object> returnValueList = companiesMap.get(databaseName).readRow((String)parameters.get(0),
+																					  (String)parameters.get(1),
+																					  (Object)parameters.get(2));
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, returnValueList, clientInfo);
+			}
+		}
+
+		private class ReadFieldByName implements DBFunction<ClientInfo, String, List<Object>> {			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				Object returnValue = companiesMap.get(databaseName).readField((String)parameters.get(0),
+																		(String)parameters.get(1),
+																		(Object)parameters.get(2),
+																		(String)parameters.get(3));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, returnValue, clientInfo);
+			}
+		}
+		
+		private class ReadFieldByIndex implements DBFunction<ClientInfo, String, List<Object>> {			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				Object returnValue = companiesMap.get(databaseName).readField((String)parameters.get(0),
+																		(String)parameters.get(1),
+																		(Object)parameters.get(2),
+																		(int)parameters.get(3));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE ,returnValue, clientInfo); 
+			}
+		}
+
+		private class UpdateFieldByName implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Field is updated";			
+			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).updateField((String)parameters.get(0),
+															(String)parameters.get(1),
+															(Object)parameters.get(2),
+															(String)parameters.get(3),
+															(Object)parameters.get(4));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class UpdateFieldByIndex implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Field is updated";			
+			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).updateField((String)parameters.get(0),
+															(String)parameters.get(1),
+															(Object)parameters.get(2),
+															(int)parameters.get(3),
+															(Object)parameters.get(4));
+
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class DeleteRow implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ACK = "Row deleted";			
+			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) throws SQLException {
+				companiesMap.get(databaseName).deleteRow((String)parameters.get(0),
+														(String)parameters.get(1),
+														(Object)parameters.get(2));
+				
+				sendMessage(databaseName, DatabaseKeys.ACK_MESSAGE, ACK, clientInfo);
+			}
+		}
+		
+		private class WrongKeyHandler implements DBFunction<ClientInfo, String, List<Object>> {
+			private static final String ERROR_MSG = "Invalid key";
+			
+			@Override
+			public void apply(ClientInfo clientInfo, String databaseName, List<Object> parameters) {
+				sendMessage(databaseName, DatabaseKeys.ERROR_MESSAGE, ERROR_MSG, clientInfo); 
+			}
+		}
+
+		private void addDatabase(String databaseName, List<Object> parameters) throws SQLException {
+			companiesMap.put(databaseName,
+									  new DatabaseManagementServer(URL, USER_NAME, USER_PASSWORD, (String)parameters.get(0)));
+		}
+		
+		private void sendMessage(String databaseName, DatabaseKeys key, Object returnValue, ClientInfo clientInfo) {
+			List<Object> returnList = new ArrayList<>();
+			returnList.add(returnValue);
+			
+			sendMessage(databaseName, key, returnList, clientInfo);
+		}
+		
+		private void sendMessage(String databaseName, DatabaseKeys key, List<Object> returnValue, ClientInfo clientInfo) {
+			ServerMessage outputMessage = buildServerMessage(databaseName, key, returnValue);
+			try {
+				ByteBuffer messageBuffer = createBuffer(outputMessage, clientInfo);
+				clientInfo.connection.sendMessage(clientInfo, messageBuffer);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		
+		private ByteBuffer createBuffer(ServerMessage outputMessage, ClientInfo clientInfo) throws IOException {
+			ByteBuffer messageBuffer = ByteBuffer.allocate(BUFFER_SIZE); 
+			messageBuffer.put(ByteUtil.toByteArray(outputMessage));
+			messageBuffer.flip();
+			
+			return messageBuffer;
+		}
+		
+		private ServerMessage buildServerMessage(String databaseName, DatabaseKeys key, List<Object> returnValue) {
+			ActionTypeKey actionTypeKey = new ActionTypeKey(databaseName, key);
+	
+			return new ServerMessage(ProtocolType.DATABASE_MANAGEMENT, new DatabaseManagementMessage(actionTypeKey, returnValue));
+		}
+	}
+	
 	/***********************************************
 	 * Chat Server Client
 	 **********************************************/
@@ -480,6 +727,8 @@ public class Server {
 		public MessageHandler() {
 			addProtocol(new PingPongProtocol(), ProtocolType.PINGPONG);
 			addProtocol(new ChatServerProtocol(), ProtocolType.CHAT_SERVER);
+			addProtocol(new DatabaseManagementProtocol(), ProtocolType.DATABASE_MANAGEMENT);
+
 		}
 				
 		private void handleMessage(ByteBuffer buffer, ClientInfo clientInfo) throws ClassNotFoundException, IOException {

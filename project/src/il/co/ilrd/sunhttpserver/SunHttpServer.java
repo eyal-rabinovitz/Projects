@@ -15,8 +15,9 @@ import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
-import il.co.ilrd.http_message.HttpMethod;
-import il.co.ilrd.http_message.HttpStatusCode;
+
+import http_message.HttpMethod;
+import http_message.HttpStatusCode;
 
 public class SunHttpServer {
 	private Map<String, DatabaseManagementServer> companiesMap = new HashMap<>();
